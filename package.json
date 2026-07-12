@@ -1,0 +1,28 @@
+{
+  "name": "x-social-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Autonomous X/Twitter social agent with a billionaire-mindset persona, Telegram approval flow, and past-context-aware content generation.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "login": "tsx scripts/login.ts",
+    "run:tick": "tsx src/index.ts tick",
+    "run:executor": "tsx src/index.ts executor",
+    "run:bot": "tsx src/index.ts bot",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "playwright": "^1.45.0",
+    "rebrowser-playwright": "^1.45.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.6"
+  }
+}
