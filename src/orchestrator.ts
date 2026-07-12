@@ -124,7 +124,7 @@ export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
       if (await shouldUseTemplate(db)) {
         const template = await getUnusedTemplate(db);
         if (template) {
-          templatePost = await fillTemplate(template.template, { trend: trends[0]?.topic_text ?? "India" });
+          templatePost = await fillTemplate(template.template_text, { trend: trends[0]?.topic_text ?? "India" });
           console.log(`Generated viral template post: ${templatePost.slice(0, 60)}...`);
         }
       }

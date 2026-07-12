@@ -254,7 +254,7 @@ export interface PillarPerformance {
 
 export interface ViralTemplate {
   id: string;
-  template: string;
+  template_text: string;
   pattern: string | null;
   source: string | null;
   avg_engagement: number | null;

@@ -294,7 +294,7 @@ async function handleCommand(env: Env, db: SupabaseClient, text: string, chatId:
       const templates = await db.getTopViralTemplates(5);
       const parts = [b("Top Viral Templates")];
       for (const t of templates) {
-        parts.push("", `  "${t.template}"`, `  Used ${t.times_used}x, avg engagement: ${t.avg_engagement ?? "N/A"}`);
+        parts.push("", `  "${t.template_text}"`, `  Used ${t.times_used}x, avg engagement: ${t.avg_engagement ?? "N/A"}`);
       }
       if (!templates.length) parts.push("", "No templates yet. They build up as posts go viral.");
       await sendTelegram(env, parts.join("\n"), chatId);

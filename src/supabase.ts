@@ -315,7 +315,6 @@ export class SupabaseClient {
         ...account,
         follows_back: false,
         followed_at: new Date().toISOString(),
-        unfollowed: false,
       }),
     });
   }
@@ -337,7 +336,7 @@ export class SupabaseClient {
 
   async getNonFollowBackAccounts(threshold: string): Promise<Array<{ id: string; handle: string }>> {
     return this.request<Array<{ id: string; handle: string }>>(
-      `followed_accounts?follows_back=eq.false&unfollowed=eq.false&followed_at=lt.${threshold}&select=id,handle`,
+      `followed_accounts?follows_back=eq.false&followed_at=lt.${threshold}&select=id,handle`,
     );
   }
 
@@ -345,7 +344,7 @@ export class SupabaseClient {
     await this.request(`followed_accounts?id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { prefer: "return=minimal" },
-      body: JSON.stringify({ unfollowed: true, unfollowed_at: new Date().toISOString() }),
+      body: JSON.stringify({ unfollowed_at: new Date().toISOString() }),
     });
   }
 
@@ -513,7 +512,7 @@ export class SupabaseClient {
 
   async getNewFollowersWithoutDM(limit = 50): Promise<NewFollower[]> {
     return this.request<NewFollower[]>(
-      `new_followers?dm_sent=eq.false&select=*&order=first_seen_at.asc&limit=${limit}`,
+      `new_followers?dm_sent=eq.false&select=*&order=followed_us_at.asc&limit=${limit}`,
     );
   }
 
@@ -748,7 +747,7 @@ export class SupabaseClient {
     await this.request("viral_templates", {
       method: "POST",
       headers: { prefer: "return=minimal" },
-      body: JSON.stringify({ ...values, times_used: values.times_used ?? 0 }),
+      body: JSON.stringify({ template_text: values.template, source: values.source, avg_engagement: values.avg_engagement, times_used: values.times_used ?? 0 }),
     });
   }
 
