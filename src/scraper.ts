@@ -1,4 +1,4 @@
-import type { Page } from "rebrowser-playwright";
+import type { Page } from "playwright";
 import { checkForChallenge } from "./session";
 
 export interface ScrapedTrend {

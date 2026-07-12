@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { chromium } from "rebrowser-playwright";
+import { chromium } from "playwright";
 
 const SESSION_PATH = process.env.STORAGE_STATE_PATH ?? "./storageState.json";
 

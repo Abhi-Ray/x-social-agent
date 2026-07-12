@@ -1,4 +1,4 @@
-import type { Page } from "rebrowser-playwright";
+import type { Page } from "playwright";
 import type { Draft, ActionType } from "./types";
 import { checkForChallenge } from "./session";
 import { sleep } from "./config";

@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "rebrowser-playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 const SESSION_PATH = process.env.STORAGE_STATE_PATH ?? "./storageState.json";
 
