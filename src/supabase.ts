@@ -543,13 +543,13 @@ export class SupabaseClient {
   }
 
   async getTopHashtags(limit = 10): Promise<HashtagStat[]> {
-    const rows = await this.request<Array<{ hashtag: string; engagement: number }>>(
-      `hashtag_performance?select=hashtag,engagement&limit=500`,
+    const rows = await this.request<Array<{ hashtag: string; likes: number; retweets: number; replies: number }>>(
+      `hashtag_performance?select=hashtag,likes,retweets,replies&limit=500`,
     );
     const grouped = new Map<string, { total: number; count: number }>();
     for (const row of rows) {
       const stat = grouped.get(row.hashtag) ?? { total: 0, count: 0 };
-      stat.total += row.engagement ?? 0;
+      stat.total += (row.likes ?? 0) + (row.retweets ?? 0) + (row.replies ?? 0);
       stat.count += 1;
       grouped.set(row.hashtag, stat);
     }
