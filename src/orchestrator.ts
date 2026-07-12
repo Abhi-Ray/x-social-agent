@@ -6,12 +6,18 @@ import { generateAndStoreDrafts } from "./generator";
 import { sendDraftForApproval, sendTelegram, b } from "./telegram";
 import { executeAction } from "./executor";
 import { scrapeAllEngagement } from "./engagement";
-import { DAILY_CAPS, MIN_GAP_SECONDS, JITTER_SECONDS, MAX_DRAFTS_PER_TICK, localDate, sleep, hashText } from "./config";
+import { DAILY_CAPS, MIN_GAP_SECONDS, JITTER_SECONDS, MAX_DRAFTS_PER_TICK, localDate, sleep, hashText, isQuietHours, getISTHour } from "./config";
 import type { ActionType } from "./types";
 
 // ─── Main tick: scrape trends → generate drafts → push to Telegram ───
 export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
-  console.log(`[${new Date().toISOString()}] Starting tick...`);
+  console.log(`[${new Date().toISOString()}] Starting tick... (IST hour: ${getISTHour()})`);
+
+  // Quiet hours: 12 AM to 7 AM IST — skip tick entirely
+  if (isQuietHours()) {
+    console.log(`Quiet hours (12 AM - 7 AM IST). Skipping tick. Current IST hour: ${getISTHour()}`);
+    return;
+  }
 
   // 1. Launch Playwright session
   const { browser, context, page } = await launchSession(true);
@@ -99,7 +105,13 @@ export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
 
 // ─── Executor loop: process approved actions with human-paced delays ───
 export async function runExecutor(env: Env, db: SupabaseClient): Promise<void> {
-  console.log(`[${new Date().toISOString()}] Executor starting...`);
+  console.log(`[${new Date().toISOString()}] Executor starting... (IST hour: ${getISTHour()})`);
+
+  // Quiet hours: don't post during 12 AM - 7 AM IST
+  if (isQuietHours()) {
+    console.log(`Quiet hours (12 AM - 7 AM IST). Executor paused. Pending actions will execute after 7 AM.`);
+    return;
+  }
 
   const pending = await db.getPendingActions();
   if (!pending.length) {

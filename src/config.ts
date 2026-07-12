@@ -43,6 +43,26 @@ export function localDate(offsetDays = 0): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+// Get current hour in IST (0-23)
+export function getISTHour(): number {
+  const istTime = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour: "numeric",
+    hour12: false,
+  }).format(new Date());
+  return parseInt(istTime, 10);
+}
+
+// Quiet hours: 12 AM (midnight) to 7 AM IST — no posts, no drafts
+// Active hours: 7 AM to 11:59 PM IST
+export const QUIET_START_HOUR = 0; // 12 AM IST
+export const QUIET_END_HOUR = 7;   // 7 AM IST
+
+export function isQuietHours(): boolean {
+  const hour = getISTHour();
+  return hour >= QUIET_START_HOUR && hour < QUIET_END_HOUR;
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

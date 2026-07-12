@@ -149,6 +149,7 @@ Rules:
 
   const errors: string[] = [];
   for (const model of models) {
+    console.log(`[OpenRouter] Using model: ${model}`);
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
