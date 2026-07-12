@@ -49,7 +49,8 @@ export async function closeSession(browser: Browser): Promise<void> {
 }
 
 export async function isLoggedIn(page: Page): Promise<boolean> {
-  await page.goto("https://x.com/home", { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await page.waitForTimeout(3000);
   // Check if we're redirected to login
   const url = page.url();
   if (url.includes("login") || url.includes("i/flow/login")) return false;

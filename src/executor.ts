@@ -38,7 +38,7 @@ export async function executeAction(page: Page, draft: Draft): Promise<Execution
 }
 
 async function postOriginal(page: Page, text: string): Promise<ExecutionResult> {
-  await page.goto("https://x.com/compose/post", { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto("https://x.com/compose/post", { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (await checkForChallenge(page)) {
     return { success: false, xPostUrl: null, error: "Challenge page detected", challenge: true };
@@ -49,7 +49,7 @@ async function postOriginal(page: Page, text: string): Promise<ExecutionResult> 
     await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 10_000 });
   } catch {
     // Fallback: go to home and use the inline composer
-    await page.goto("https://x.com/home", { waitUntil: "networkidle", timeout: 30_000 });
+    await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 10_000 });
   }
 
@@ -74,7 +74,7 @@ async function postOriginal(page: Page, text: string): Promise<ExecutionResult> 
 }
 
 async function postReply(page: Page, tweetUrl: string, text: string): Promise<ExecutionResult> {
-  await page.goto(tweetUrl, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto(tweetUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (await checkForChallenge(page)) {
     return { success: false, xPostUrl: null, error: "Challenge page detected", challenge: true };
@@ -103,7 +103,7 @@ async function postReply(page: Page, tweetUrl: string, text: string): Promise<Ex
 }
 
 async function postRetweetWithComment(page: Page, tweetUrl: string, text: string): Promise<ExecutionResult> {
-  await page.goto(tweetUrl, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto(tweetUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (await checkForChallenge(page)) {
     return { success: false, xPostUrl: null, error: "Challenge page detected", challenge: true };

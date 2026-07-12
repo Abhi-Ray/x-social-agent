@@ -14,7 +14,7 @@ export interface ScrapedTweet {
 }
 
 export async function scrapeTrending(page: Page): Promise<ScrapedTrend[]> {
-  await page.goto("https://x.com/explore/tabs/trending", { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto("https://x.com/explore/tabs/trending", { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (await checkForChallenge(page)) {
     throw new Error("CHALLENGE: X is showing a challenge/login page during trending scrape. Stopping.");
@@ -25,7 +25,7 @@ export async function scrapeTrending(page: Page): Promise<ScrapedTrend[]> {
     await page.waitForSelector('[data-testid="trend"]', { timeout: 15_000 });
   } catch {
     // Fallback: try the sidebar trends on home page
-    await page.goto("https://x.com/home", { waitUntil: "networkidle", timeout: 30_000 });
+    await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.waitForSelector('aside[aria-label="Trends"]', { timeout: 15_000 }).catch(() => {});
   }
 
@@ -69,7 +69,7 @@ export async function scrapeTrending(page: Page): Promise<ScrapedTrend[]> {
 }
 
 export async function scrapeTimelineTweets(page: Page, limit = 10): Promise<ScrapedTweet[]> {
-  await page.goto("https://x.com/home", { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (await checkForChallenge(page)) {
     throw new Error("CHALLENGE: X is showing a challenge/login page during timeline scrape. Stopping.");
@@ -113,7 +113,7 @@ export async function scrapeTimelineTweets(page: Page, limit = 10): Promise<Scra
 
 export async function scrapeOwnProfile(page: Page, handle: string, limit = 20): Promise<ScrapedTweet[]> {
   if (!handle) return [];
-  await page.goto(`https://x.com/${handle}`, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.goto(`https://x.com/${handle}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (await checkForChallenge(page)) {
     throw new Error("CHALLENGE: X is showing a challenge/login page during profile scrape. Stopping.");
