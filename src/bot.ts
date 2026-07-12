@@ -144,6 +144,13 @@ async function handleCommand(env: Env, db: SupabaseClient, text: string, chatId:
       "/delete <url> — delete a post by its X URL",
       "/undo-retweet <url> — undo a retweet by its X URL",
       "/health — account health log",
+      "/engagement — engagement summary + best posting hours",
+      "/followers — new followers + DM status",
+      "/competitors — competitor cloning stats",
+      "/templates — top viral templates",
+      "/pillars — content pillar performance",
+      "/sentiment — sentiment analysis of recent replies",
+      "/trends — trend predictions",
       "",
       "Send plain text to edit a draft (after tapping Edit).",
     ].join("\n"), chatId);
@@ -246,6 +253,96 @@ async function handleCommand(env: Env, db: SupabaseClient, text: string, chatId:
       }
     } catch (error) {
       await sendTelegram(env, b(`Undo error: ${error instanceof Error ? error.message : String(error)}`), chatId);
+    }
+  } else if (cmd === "/engagement") {
+    try {
+      const { getBestPostingHours } = await import("./besttime");
+      const { getISTHour } = await import("./config");
+      const bestHours = await getBestPostingHours(db, 5);
+      const currentHour = getISTHour();
+      const parts = [b("Engagement Analytics"), "", `Current IST hour: ${currentHour}`, "", b("Best posting hours (IST):")];
+      for (const h of bestHours) {
+        parts.push(`  ${h.hour}:00 — avg ${Math.round(h.avgEngagement)} engagement (${h.postCount} posts)`);
+      }
+      if (!bestHours.length) parts.push("  Not enough data yet. Keep posting!");
+      await sendTelegram(env, parts.join("\n"), chatId);
+    } catch (e) {
+      await sendTelegram(env, b(`Engagement error: ${e instanceof Error ? e.message : String(e)}`), chatId);
+    }
+  } else if (cmd === "/followers") {
+    try {
+      const followers = await db.getRecentCrossPosts(5); // placeholder
+      const parts = [b("Follower Growth"), "", "Use Supabase dashboard for detailed follower stats.", "Auto-DM is active — new followers get welcome messages automatically."];
+      await sendTelegram(env, parts.join("\n"), chatId);
+    } catch (e) {
+      await sendTelegram(env, b(`Followers error: ${e instanceof Error ? e.message : String(e)}`), chatId);
+    }
+  } else if (cmd === "/competitors") {
+    try {
+      const posts = await db.getTopCompetitorPosts(5);
+      const parts = [b("Competitor Cloning — Top Viral Posts")];
+      for (const p of posts) {
+        parts.push("", `"${p.post_text.slice(0, 80)}..."`, `${p.likes} likes, ${p.retweets} RTs`);
+      }
+      if (!posts.length) parts.push("", "No competitor data yet. Cloning runs every tick.");
+      await sendTelegram(env, parts.join("\n"), chatId);
+    } catch (e) {
+      await sendTelegram(env, b(`Competitors error: ${e instanceof Error ? e.message : String(e)}`), chatId);
+    }
+  } else if (cmd === "/templates") {
+    try {
+      const templates = await db.getTopViralTemplates(5);
+      const parts = [b("Top Viral Templates")];
+      for (const t of templates) {
+        parts.push("", `  "${t.template}"`, `  Used ${t.times_used}x, avg engagement: ${t.avg_engagement ?? "N/A"}`);
+      }
+      if (!templates.length) parts.push("", "No templates yet. They build up as posts go viral.");
+      await sendTelegram(env, parts.join("\n"), chatId);
+    } catch (e) {
+      await sendTelegram(env, b(`Templates error: ${e instanceof Error ? e.message : String(e)}`), chatId);
+    }
+  } else if (cmd === "/pillars") {
+    try {
+      const { getPillarPerformance } = await import("./pillars");
+      const perf = await getPillarPerformance(db);
+      const parts = [b("Content Pillar Performance")];
+      for (const p of perf) {
+        parts.push(`  ${p.pillar}: ${Math.round(p.avg_engagement)} avg engagement (${p.total_posts} posts)`);
+      }
+      if (!perf.length) parts.push("", "No pillar data yet. Rotation is active.");
+      await sendTelegram(env, parts.join("\n"), chatId);
+    } catch (e) {
+      await sendTelegram(env, b(`Pillars error: ${e instanceof Error ? e.message : String(e)}`), chatId);
+    }
+  } else if (cmd === "/sentiment") {
+    try {
+      const summary = await db.getSentimentSummary();
+      const parts = [b("Sentiment Analysis (All Replies)")];
+      let positive = 0, negative = 0, neutral = 0;
+      for (const s of summary) {
+        if (s.sentiment === "positive") positive = parseInt(s.count, 10);
+        else if (s.sentiment === "negative") negative = parseInt(s.count, 10);
+        else if (s.sentiment === "neutral") neutral = parseInt(s.count, 10);
+      }
+      parts.push(`  Positive: ${positive}`);
+      parts.push(`  Negative: ${negative}`);
+      parts.push(`  Neutral: ${neutral}`);
+      if (!summary.length) parts.push("", "No sentiment data yet. Analysis runs every tick.");
+      await sendTelegram(env, parts.join("\n"), chatId);
+    } catch (e) {
+      await sendTelegram(env, b(`Sentiment error: ${e instanceof Error ? e.message : String(e)}`), chatId);
+    }
+  } else if (cmd === "/trends") {
+    try {
+      const predictions = await db.getUnpostedTrendPredictions(5);
+      const parts = [b("Trend Predictions")];
+      for (const p of predictions) {
+        parts.push(`  ${p.topic} (score: ${p.prediction_score?.toFixed(2) ?? "N/A"})`);
+      }
+      if (!predictions.length) parts.push("", "No predictions yet. Monitoring emerging topics every tick.");
+      await sendTelegram(env, parts.join("\n"), chatId);
+    } catch (e) {
+      await sendTelegram(env, b(`Trends error: ${e instanceof Error ? e.message : String(e)}`), chatId);
     }
   }
 }

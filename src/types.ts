@@ -9,6 +9,9 @@ export interface Env {
   STORAGE_STATE_PATH: string;
   X_HANDLE: string;
   CRON_INTERVAL_MINUTES: string;
+  THREADS_ACCESS_TOKEN?: string;
+  THREADS_USER_ID?: string;
+  LINKEDIN_ACCESS_TOKEN?: string;
 }
 
 export type ActionType = "original_post" | "reply" | "retweet_comment" | "mention";
@@ -123,6 +126,32 @@ export interface TelegramUpdate {
   };
 }
 
+export interface ABTestVariant {
+  id: string;
+  test_group: string;
+  variant: "A" | "B";
+  topic: string;
+  text: string;
+  engagement_likes: number | null;
+  engagement_retweets: number | null;
+  engagement_replies: number | null;
+  is_winner: boolean | null;
+  created_at: string;
+  posted_at: string | null;
+}
+
+export interface ABVariantResult {
+  variantA: string;
+  variantB: string;
+  topic: string;
+}
+
+export interface ThreadPostResult {
+  success: boolean;
+  threadUrl: string | null;
+  error: string | null;
+}
+
 export interface ContextWindow {
   recent_posts: PostedContent[];
   recent_trends: TrendingTopic[];
@@ -130,4 +159,106 @@ export interface ContextWindow {
   today_counters: DailyCounter | null;
   verified_quotes_sample: VerifiedQuote[];
   persona_summary: string;
+}
+
+export interface TrendPrediction {
+  id: string;
+  topic: string;
+  prediction_score: number;
+  current_engagement: number;
+  growth_rate: number;
+  predicted_at: string;
+  trended_at: string | null;
+  posted_at: string | null;
+}
+
+export interface EmergingTopic {
+  topic: string;
+  predictionScore: number;
+  currentEngagement: number;
+  growthRate: number;
+}
+
+export interface NewFollower {
+  id: string;
+  handle: string;
+  name: string;
+  first_seen_at: string;
+  dm_sent: boolean;
+  dm_sent_at: string | null;
+}
+
+export interface HashtagPerformance {
+  id: string;
+  hashtag: string;
+  post_url: string | null;
+  engagement: number;
+  recorded_at: string;
+}
+
+export interface HashtagStat {
+  hashtag: string;
+  avg_engagement: number;
+  total_posts: number;
+}
+
+export interface MentionQueueEntry {
+  id: string;
+  tweet_url: string;
+  author_handle: string;
+  author_name: string;
+  tweet_text: string;
+  replied: boolean;
+  replied_at: string | null;
+  first_seen_at: string;
+}
+
+export interface ScrapedMention {
+  authorHandle: string;
+  authorName: string;
+  tweetUrl: string;
+  tweetText: string;
+}
+
+export interface ScrapedFollower {
+  handle: string;
+  name: string;
+}
+
+export interface CrossPostLog {
+  id: string;
+  platform: "threads" | "linkedin";
+  post_text: string;
+  external_url: string | null;
+  success: boolean;
+  error: string | null;
+  source_action_type: ActionType | null;
+  source_post_url: string | null;
+  posted_at: string;
+}
+
+export interface ContentPillarLog {
+  id: string;
+  pillar: string;
+  post_url: string | null;
+  engagement_score: number | null;
+  used_at: string;
+}
+
+export interface PillarPerformance {
+  pillar: string;
+  total_posts: number;
+  avg_engagement: number;
+  last_used_at: string | null;
+}
+
+export interface ViralTemplate {
+  id: string;
+  template: string;
+  pattern: string | null;
+  source: string | null;
+  avg_engagement: number | null;
+  times_used: number;
+  last_used_at: string | null;
+  created_at: string;
 }

@@ -6,8 +6,30 @@ import { generateAndStoreDrafts } from "./generator";
 import { sendDraftForApproval, sendTelegram, b } from "./telegram";
 import { executeAction } from "./executor";
 import { scrapeAllEngagement } from "./engagement";
+import { findAccountsToFollow, followAccount, unfollowNonFollowers, type FollowCategory } from "./autofollow";
+import { isGoodTimeToPost, updateEngagementByHour, getBestPostingHours } from "./besttime";
+import { analyzePostReplies } from "./sentiment";
+import { scrapeCompetitorPosts, extractViralPattern, saveCompetitorPost, saveViralTemplate, getTopViralTemplates } from "./competitor";
+import { shouldGenerateImage, generateImagePrompt, generateImage } from "./images";
+import { shouldPostInHindi, generateHindiPost } from "./hindi";
+import { scrapeEmergingTopics, predictAndStore, checkPredictionsTrended, getPredictedTopicsToPost } from "./trendpredict";
+import { processNewFollowers } from "./autodm";
+import { suggestHashtags, updateHashtagPerformanceFromPosts } from "./hashtags";
+import { autoReplyToMentions } from "./mentions";
+import { crossPostAll, shouldCrossPost } from "./crosspost";
+import { pickNextPillar, getPillarInstructions, logPillarUse } from "./pillars";
+import { shouldUseTemplate, getUnusedTemplate, fillTemplate } from "./viraltemplates";
 import { DAILY_CAPS, MIN_GAP_SECONDS, JITTER_SECONDS, MAX_DRAFTS_PER_TICK, localDate, sleep, hashText, isQuietHours, getISTHour } from "./config";
 import type { ActionType } from "./types";
+
+// Indian competitor accounts to learn from (viral Indian X accounts)
+const COMPETITOR_HANDLES = [
+  "peakbengali", "bababoro", "GabbbarSingh", "harryistired", "Being_Humor",
+  "RoflGandhi_", "shubham_1107", "KarthikMudgal", "GabbarSays", "baba__g",
+];
+
+// Indian influencer categories for auto-follow
+const INFLUENCER_CATEGORIES = ["tech", "finance", "journalism", "politics", "startups"];
 
 // ─── Main tick: scrape trends → generate drafts → push to Telegram ───
 export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
@@ -74,6 +96,90 @@ export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
     }
 
     // 6. Generate drafts with past-context awareness + viral reply targets
+    // Pick a content pillar for this tick (topic rotation)
+    let pillarInstruction = "";
+    try {
+      const pillar = await pickNextPillar(db);
+      pillarInstruction = getPillarInstructions(pillar);
+      console.log(`Content pillar for this tick: ${pillar}`);
+    } catch (e) {
+      console.log(`Pillar selection failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Check if we should generate a Hindi/Hinglish post (every 4th post)
+    let hindiPost: { text: string; script: string; topic: string } | null = null;
+    try {
+      if (await shouldPostInHindi(db, 10)) {
+        const topTrend = trends[0]?.topic_text ?? "India";
+        hindiPost = await generateHindiPost(env.OPENROUTER_API_KEY, await import("./generator").then(m => m.buildContextWindow(db)), topTrend);
+        console.log(`Generated Hindi post (${hindiPost.script}): ${hindiPost.text.slice(0, 60)}...`);
+      }
+    } catch (e) {
+      console.log(`Hindi generation failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Check if we should use a viral template
+    let templatePost: string | null = null;
+    try {
+      if (await shouldUseTemplate(db)) {
+        const template = await getUnusedTemplate(db);
+        if (template) {
+          templatePost = await fillTemplate(template.template, { trend: trends[0]?.topic_text ?? "India" });
+          console.log(`Generated viral template post: ${templatePost.slice(0, 60)}...`);
+        }
+      }
+    } catch (e) {
+      console.log(`Viral template failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Trend prediction — check if previous predictions came true
+    try {
+      const trendedCount = await checkPredictionsTrended(page, db);
+      if (trendedCount > 0) console.log(`Trend predictions: ${trendedCount} predictions came true.`);
+      // Store new predictions
+      const emerging = await scrapeEmergingTopics(page, db);
+      if (emerging.length) {
+        await predictAndStore(db, emerging);
+        console.log(`Stored ${emerging.length} trend predictions.`);
+      }
+    } catch (e) {
+      console.log(`Trend prediction failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Auto-reply to mentions (every tick)
+    try {
+      const replyCount = await autoReplyToMentions(db, page, env.X_HANDLE, env.OPENROUTER_API_KEY);
+      if (replyCount > 0) {
+        console.log(`Auto-replied to ${replyCount} mentions.`);
+        await sendTelegram(env, b(`Replied to ${replyCount} mentions on X.`));
+      }
+    } catch (e) {
+      console.log(`Mention reply failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Hashtag performance update
+    try {
+      const recentPosts = await db.getRecentPosts(20);
+      await updateHashtagPerformanceFromPosts(db, recentPosts);
+    } catch (e) {
+      console.log(`Hashtag update failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Competitor cloning — scrape 1 competitor per tick (rotate)
+    try {
+      const competitorHandle = COMPETITOR_HANDLES[Math.floor(Math.random() * COMPETITOR_HANDLES.length)]!;
+      const competitorPosts = await scrapeCompetitorPosts(page, competitorHandle, 5);
+      for (const post of competitorPosts) {
+        await saveCompetitorPost(db, competitorHandle, post);
+        const eng = { likes: post.likes, retweets: post.retweets, replies: post.replies };
+        const { template } = extractViralPattern(post.text, eng);
+        if (template) await saveViralTemplate(db, template, competitorHandle, eng);
+      }
+      if (competitorPosts.length) console.log(`Cloned ${competitorPosts.length} posts from @${competitorHandle}.`);
+    } catch (e) {
+      console.log(`Competitor cloning failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
     console.log("Generating drafts...");
     const drafts = await generateAndStoreDrafts(env, db, trends.slice(0, 10), viralTweets);
     console.log(`Generated ${drafts.length} drafts.`);
@@ -95,6 +201,108 @@ export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
         await db.updateDraftStatus(dbDraft.id, "pending_approval", { telegram_message_id: messageId });
       }
       await sleep(1000); // Small delay between Telegram messages
+    }
+
+    // Send Hindi post to Telegram if generated
+    if (hindiPost) {
+      try {
+        const dbDrafts = await db.getRecentDrafts(1);
+        const hindiDraft = {
+          id: "",
+          action_type: "original_post" as ActionType,
+          source_tweet_url: null,
+          source_tweet_text: null,
+          source_tweet_author: null,
+          draft_text: hindiPost.text,
+          quote_text: null,
+          quote_attributed_to: null,
+          quote_source: null,
+          trend_topic: hindiPost.topic,
+          status: "pending_approval" as const,
+          telegram_message_id: null,
+          created_at: new Date().toISOString(),
+        };
+        await db.insertDraft(hindiDraft);
+        const freshDrafts = await db.getRecentDrafts(5);
+        const inserted = freshDrafts.find((d) => d.draft_text === hindiPost.text && d.status === "pending_approval");
+        if (inserted) {
+          const msgId = await sendDraftForApproval(env, { ...inserted, draft_text: `[${hindiPost.script.toUpperCase()}] ${inserted.draft_text}` });
+          if (msgId) await db.updateDraftStatus(inserted.id, "pending_approval", { telegram_message_id: msgId });
+        }
+      } catch (e) {
+        console.log(`Hindi post delivery failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
+    // Send viral template post to Telegram if generated
+    if (templatePost) {
+      try {
+        const templateDraft = {
+          id: "",
+          action_type: "original_post" as ActionType,
+          source_tweet_url: null,
+          source_tweet_text: null,
+          source_tweet_author: null,
+          draft_text: templatePost,
+          quote_text: null,
+          quote_attributed_to: null,
+          quote_source: null,
+          trend_topic: "viral_template",
+          status: "pending_approval" as const,
+          telegram_message_id: null,
+          created_at: new Date().toISOString(),
+        };
+        await db.insertDraft(templateDraft);
+        const freshDrafts = await db.getRecentDrafts(5);
+        const inserted = freshDrafts.find((d) => d.draft_text === templatePost && d.status === "pending_approval");
+        if (inserted) {
+          const msgId = await sendDraftForApproval(env, { ...inserted, draft_text: `[VIRAL TEMPLATE] ${inserted.draft_text}` });
+          if (msgId) await db.updateDraftStatus(inserted.id, "pending_approval", { telegram_message_id: msgId });
+        }
+      } catch (e) {
+        console.log(`Viral template delivery failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
+    // Auto-follow: find and follow 1-2 Indian influencers per tick
+    try {
+      const accountsToFollow = await findAccountsToFollow(page, [INFLUENCER_CATEGORIES[Math.floor(Math.random() * INFLUENCER_CATEGORIES.length)] as FollowCategory]);
+      let followed = 0;
+      for (const account of accountsToFollow.slice(0, 2)) {
+        const result = await followAccount(page, account.handle);
+        if (result.success) {
+          await db.insertFollowedAccount({ handle: account.handle, name: account.name, category: account.category, followers_count: account.followersCount });
+          followed++;
+          await sleep(3000 + Math.random() * 2000);
+        }
+      }
+      if (followed > 0) console.log(`Auto-followed ${followed} accounts.`);
+    } catch (e) {
+      console.log(`Auto-follow failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Auto-DM new followers
+    try {
+      const dmCount = await processNewFollowers(db, page, env.X_HANDLE, env.OPENROUTER_API_KEY);
+      if (dmCount > 0) {
+        console.log(`Sent ${dmCount} welcome DMs to new followers.`);
+        await sendTelegram(env, b(`Sent ${dmCount} welcome DMs to new followers.`));
+      }
+    } catch (e) {
+      console.log(`Auto-DM failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
+    // Sentiment analysis on recent posts
+    try {
+      const recentPosts = await db.getRecentPosts(5);
+      for (const post of recentPosts) {
+        if (post.x_post_url) {
+          await analyzePostReplies(db, page, post.x_post_url);
+          await sleep(2000);
+        }
+      }
+    } catch (e) {
+      console.log(`Sentiment analysis failed (non-fatal): ${e instanceof Error ? e.message : e}`);
     }
 
     console.log("Tick complete. Drafts sent to Telegram for approval.");
@@ -198,6 +406,26 @@ export async function runExecutor(env: Env, db: SupabaseClient): Promise<void> {
           const quotes = await db.getVerifiedQuotes(100);
           const usedQuote = quotes.find((q) => q.text === draft.quote_text && q.attributed_to === draft.quote_attributed_to);
           if (usedQuote) await db.markQuoteUsed(usedQuote.id);
+        }
+
+        // Log content pillar use
+        try {
+          const pillar = await pickNextPillar(db);
+          await logPillarUse(db, pillar, result.xPostUrl ?? undefined);
+        } catch {}
+
+        // Record engagement by hour for best-time-to-post AI
+        try {
+          await updateEngagementByHour(db, getISTHour(), 0);
+        } catch {}
+
+        // Cross-post to Threads/LinkedIn if configured (only for original posts)
+        if (draft.action_type === "original_post") {
+          try {
+            await crossPostAll(draft.draft_text, undefined, db, draft.action_type, result.xPostUrl ?? undefined);
+          } catch (e) {
+            console.log(`Cross-post failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+          }
         }
 
         console.log("Action executed successfully.");
