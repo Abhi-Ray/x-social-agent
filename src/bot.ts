@@ -140,6 +140,9 @@ async function handleCommand(env: Env, db: SupabaseClient, text: string, chatId:
       "/help — this message",
       "/status — current daily counters and pending actions",
       "/pending — list drafts awaiting approval",
+      "/posts — list recent posts with delete links",
+      "/delete <url> — delete a post by its X URL",
+      "/undo-retweet <url> — undo a retweet by its X URL",
       "/health — account health log",
       "",
       "Send plain text to edit a draft (after tapping Edit).",
@@ -176,6 +179,74 @@ async function handleCommand(env: Env, db: SupabaseClient, text: string, chatId:
     const today = getLocalDate();
     const recent = await db.getRecentTrends(1); // placeholder — would query health log
     await sendTelegram(env, [b("Account Health"), "", `Today: ${today}`, "Use Supabase dashboard for detailed health logs."].join("\n"), chatId);
+  } else if (cmd === "/posts") {
+    // List recent posts for deletion
+    const posts = await db.getRecentPosts(10);
+    if (!posts.length) {
+      await sendTelegram(env, "No posts yet.", chatId);
+    } else {
+      const parts = [b("Recent Posts (tap to delete)"), ""];
+      for (const p of posts) {
+        const age = Math.round((Date.now() - new Date(p.posted_at).getTime()) / 3_600_000);
+        const preview = p.posted_text.slice(0, 60) + (p.posted_text.length > 60 ? "..." : "");
+        parts.push(`${escapeHtml(preview)} (${age}h ago)`);
+        if (p.x_post_url) parts.push(`Delete: /delete ${escapeHtml(p.x_post_url)}`);
+        parts.push("");
+      }
+      await sendTelegram(env, parts.join("\n"), chatId);
+    }
+  } else if (cmd.startsWith("/delete ")) {
+    const url = text.slice(8).trim();
+    if (!url || !url.includes("x.com")) {
+      await sendTelegram(env, "Usage: /delete <tweet URL>", chatId);
+      return;
+    }
+    await sendTelegram(env, b(`Deleting post: ${url}`), chatId);
+    try {
+      const { launchSession, closeSession } = await import("./session");
+      const { deletePost } = await import("./executor");
+      const { browser, page } = await launchSession(true);
+      try {
+        const result = await deletePost(page, url);
+        if (result.success) {
+          await sendTelegram(env, b("Post deleted successfully."), chatId);
+        } else if (result.challenge) {
+          await sendTelegram(env, b(`ALERT: Challenge detected while deleting. Stopping. ${result.error}`), chatId);
+        } else {
+          await sendTelegram(env, b(`Delete failed: ${result.error}`), chatId);
+        }
+      } finally {
+        await closeSession(browser);
+      }
+    } catch (error) {
+      await sendTelegram(env, b(`Delete error: ${error instanceof Error ? error.message : String(error)}`), chatId);
+    }
+  } else if (cmd.startsWith("/undo-retweet ")) {
+    const url = text.slice(14).trim();
+    if (!url || !url.includes("x.com")) {
+      await sendTelegram(env, "Usage: /undo-retweet <tweet URL>", chatId);
+      return;
+    }
+    await sendTelegram(env, b(`Undoing retweet: ${url}`), chatId);
+    try {
+      const { launchSession, closeSession } = await import("./session");
+      const { undoRetweet } = await import("./executor");
+      const { browser, page } = await launchSession(true);
+      try {
+        const result = await undoRetweet(page, url);
+        if (result.success) {
+          await sendTelegram(env, b("Retweet undone successfully."), chatId);
+        } else if (result.challenge) {
+          await sendTelegram(env, b(`ALERT: Challenge detected. Stopping. ${result.error}`), chatId);
+        } else {
+          await sendTelegram(env, b(`Undo failed: ${result.error}`), chatId);
+        }
+      } finally {
+        await closeSession(browser);
+      }
+    } catch (error) {
+      await sendTelegram(env, b(`Undo error: ${error instanceof Error ? error.message : String(error)}`), chatId);
+    }
   }
 }
 

@@ -172,3 +172,105 @@ async function captureLatestTweetUrl(page: Page): Promise<string | null> {
   }
   return null;
 }
+
+// ─── Delete a post by URL ───
+export async function deletePost(page: Page, postUrl: string): Promise<ExecutionResult> {
+  try {
+    await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForTimeout(3000);
+
+    if (await checkForChallenge(page)) {
+      return { success: false, xPostUrl: null, error: "Challenge page detected", challenge: true };
+    }
+
+    // Wait for the tweet to load
+    try {
+      await page.waitForSelector('article [data-testid="caret"]', { timeout: 10_000 });
+    } catch {
+      return { success: false, xPostUrl: null, error: "Tweet not found or already deleted", challenge: false };
+    }
+
+    // Click the caret (more options) menu on the tweet
+    await page.click('article [data-testid="caret"]');
+    await sleep(1000 + Math.random() * 500);
+
+    // Click "Delete" from the dropdown menu
+    const deleteMenuItem = await page.$('[role="menuitem"]:has-text("Delete")') ?? await page.$('text="Delete"');
+    if (!deleteMenuItem) {
+      return { success: false, xPostUrl: null, error: "Delete option not found in menu", challenge: false };
+    }
+    await deleteMenuItem.click();
+    await sleep(1000 + Math.random() * 500);
+
+    // Confirm deletion in the modal
+    const confirmButton = await page.$('[data-testid="confirmationSheetConfirm"]') ?? await page.$('button:has-text("Delete")');
+    if (!confirmButton) {
+      return { success: false, xPostUrl: null, error: "Confirm button not found", challenge: false };
+    }
+    await confirmButton.click();
+    await sleep(2000 + Math.random() * 1000);
+
+    if (await checkForChallenge(page)) {
+      return { success: false, xPostUrl: null, error: "Challenge page detected after delete", challenge: true };
+    }
+
+    return { success: true, xPostUrl: postUrl, error: null, challenge: false };
+  } catch (error) {
+    const isChallenge = await checkForChallenge(page);
+    return {
+      success: false,
+      xPostUrl: null,
+      error: error instanceof Error ? error.message : String(error),
+      challenge: isChallenge,
+    };
+  }
+}
+
+// ─── Delete a reply by URL (same flow as deleting a post) ───
+export async function deleteReply(page: Page, replyUrl: string): Promise<ExecutionResult> {
+  return deletePost(page, replyUrl);
+}
+
+// ─── Undo a retweet ───
+export async function undoRetweet(page: Page, tweetUrl: string): Promise<ExecutionResult> {
+  try {
+    await page.goto(tweetUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForTimeout(3000);
+
+    if (await checkForChallenge(page)) {
+      return { success: false, xPostUrl: null, error: "Challenge page detected", challenge: true };
+    }
+
+    // Wait for the tweet to load
+    try {
+      await page.waitForSelector('[data-testid="unretweet"]', { timeout: 10_000 });
+    } catch {
+      return { success: false, xPostUrl: null, error: "Retweet not found or already undone", challenge: false };
+    }
+
+    // Click the unretweet button
+    await page.click('[data-testid="unretweet"]');
+    await sleep(1000 + Math.random() * 500);
+
+    // Confirm unretweet
+    const confirmButton = await page.$('[data-testid="unretweetConfirm"]');
+    if (confirmButton) {
+      await confirmButton.click();
+      await sleep(2000 + Math.random() * 1000);
+    }
+
+    if (await checkForChallenge(page)) {
+      return { success: false, xPostUrl: null, error: "Challenge page detected after undo retweet", challenge: true };
+    }
+
+    return { success: true, xPostUrl: tweetUrl, error: null, challenge: false };
+  } catch (error) {
+    const isChallenge = await checkForChallenge(page);
+    return {
+      success: false,
+      xPostUrl: null,
+      error: error instanceof Error ? error.message : String(error),
+      challenge: isChallenge,
+    };
+  }
+}
