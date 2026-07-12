@@ -168,6 +168,35 @@ export class SupabaseClient {
     });
   }
 
+  async getPostsForEngagementCheck(limit = 20): Promise<PostedContent[]> {
+    // Get posts that have a URL and are older than 1 hour (give time for engagement to accumulate)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    return this.request<PostedContent[]>(
+      `posted_content?x_post_url=not.is.null&posted_at=lt.${oneHourAgo}&select=*&order=posted_at.desc&limit=${limit}`,
+    );
+  }
+
+  async updateEngagement(id: string, metrics: { engagement_likes: number; engagement_retweets: number; engagement_replies: number }): Promise<void> {
+    await this.request(`posted_content?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify(metrics),
+    });
+  }
+
+  async getTopPerformingPosts(limit = 10): Promise<PostedContent[]> {
+    // Get posts with highest engagement (likes + retweets + replies)
+    return this.request<PostedContent[]>(
+      `posted_content?engagement_likes=not.is.null&select=*&order=engagement_likes.desc&limit=${limit}`,
+    );
+  }
+
+  async getLowPerformingPosts(limit = 10): Promise<PostedContent[]> {
+    return this.request<PostedContent[]>(
+      `posted_content?engagement_likes=not.is.null&select=*&order=engagement_likes.asc&limit=${limit}`,
+    );
+  }
+
   private wordSimilarity(a: string, b: string): number {
     const na = new Set(a.trim().toLowerCase().split(/\s+/));
     const nb = new Set(b.trim().toLowerCase().split(/\s+/));

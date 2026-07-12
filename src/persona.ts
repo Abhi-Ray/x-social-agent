@@ -80,6 +80,20 @@ export function buildContextSection(context: ContextWindow): string {
     if (drafts.length) parts.push(`DRAFTS IN PIPELINE (avoid overlap):\n${drafts.join("\n")}`);
   }
 
+  // Engagement learning — show top and bottom performing posts
+  const postsWithEngagement = context.recent_posts.filter((p) => p.engagement_likes !== null);
+  if (postsWithEngagement.length >= 3) {
+    const sorted = [...postsWithEngagement].sort((a, b) => {
+      const aScore = (a.engagement_likes ?? 0) + (a.engagement_retweets ?? 0) + (a.engagement_replies ?? 0);
+      const bScore = (b.engagement_likes ?? 0) + (b.engagement_retweets ?? 0) + (b.engagement_replies ?? 0);
+      return bScore - aScore;
+    });
+    const top = sorted.slice(0, 3).map((p) => `  + [${p.engagement_likes} likes, ${p.engagement_retweets} RTs] "${p.posted_text.slice(0, 80)}"`);
+    const bottom = sorted.slice(-3).map((p) => `  - [${p.engagement_likes} likes, ${p.engagement_retweets} RTs] "${p.posted_text.slice(0, 80)}"`);
+    parts.push(`ENGAGEMENT LEARNING — what worked (do more of this):\n${top.join("\n")}\n\nWhat flopped (avoid this style/topic):\n${bottom.join("\n")}`);
+    parts.push(`INSTRUCTION: Lean toward the style, tone, and topic patterns of your top-performing posts. Avoid the patterns of your bottom performers. This is not about copying — it's about calibrating your instinct.`);
+  }
+
   return parts.length ? `CONTEXT FOR THIS GENERATION:\n${parts.join("\n\n")}` : "CONTEXT: This is the first generation. No prior posts exist yet.";
 }
 

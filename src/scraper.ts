@@ -14,6 +14,11 @@ export interface ScrapedTweet {
 }
 
 export async function scrapeTrending(page: Page): Promise<ScrapedTrend[]> {
+  // X's trending page shows trends based on account location settings.
+  // We try the explore page first, then fall back to the home sidebar.
+  // The trends shown depend on what X has configured for this account.
+  // To get Indian trends, the X account's location should be set to India
+  // in Settings → Privacy → Content location.
   await page.goto("https://x.com/explore/tabs/trending", { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   if (await checkForChallenge(page)) {

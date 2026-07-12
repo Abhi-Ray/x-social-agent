@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { loadEnv } from "./config";
 import { SupabaseClient } from "./supabase";
-import { runTick, runExecutor, runBotPolling } from "./orchestrator";
+import { runTick, runExecutor, runBotPolling, runEngagementCheck } from "./orchestrator";
 import { SEED_QUOTES } from "./persona";
 import { sendTelegram, b } from "./telegram";
 import { localDate, sleep } from "./config";
@@ -58,6 +58,9 @@ async function main() {
           // Run executor check
           await safeRun(() => runExecutor(env, db), env, "executor");
         }
+
+        // Run engagement check before tick (so learning data is fresh)
+        await safeRun(() => runEngagementCheck(env, db), env, "engagement");
 
         // Run tick
         await safeRun(() => runTick(env, db), env, "tick");

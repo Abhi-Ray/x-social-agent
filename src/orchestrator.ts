@@ -5,6 +5,7 @@ import { scrapeTrending } from "./scraper";
 import { generateAndStoreDrafts } from "./generator";
 import { sendDraftForApproval, sendTelegram, b } from "./telegram";
 import { executeAction } from "./executor";
+import { scrapeAllEngagement } from "./engagement";
 import { DAILY_CAPS, MIN_GAP_SECONDS, JITTER_SECONDS, MAX_DRAFTS_PER_TICK, localDate, sleep, hashText } from "./config";
 import type { ActionType } from "./types";
 
@@ -174,6 +175,67 @@ export async function runExecutor(env: Env, db: SupabaseClient): Promise<void> {
     }
 
     console.log("Executor complete.");
+  } finally {
+    await closeSession(browser);
+  }
+}
+
+// ─── Engagement tracker: scrape likes/RTs/replies on recent posts ───
+export async function runEngagementCheck(env: Env, db: SupabaseClient): Promise<void> {
+  const postsToCheck = await db.getPostsForEngagementCheck(15);
+  if (!postsToCheck.length) {
+    console.log("No posts to check engagement for.");
+    return;
+  }
+
+  console.log(`[${new Date().toISOString()}] Checking engagement on ${postsToCheck.length} posts...`);
+  const { browser, page } = await launchSession(true);
+
+  try {
+    const loggedIn = await isLoggedIn(page);
+    if (!loggedIn) {
+      console.log("Session expired, skipping engagement check.");
+      return;
+    }
+
+    if (await checkForChallenge(page)) {
+      console.log("Challenge detected, skipping engagement check.");
+      return;
+    }
+
+    const results = await scrapeAllEngagement(page, postsToCheck);
+    for (const { id, metrics } of results) {
+      await db.updateEngagement(id, {
+        engagement_likes: metrics.likes,
+        engagement_retweets: metrics.retweets,
+        engagement_replies: metrics.replies,
+      });
+    }
+    console.log(`Engagement updated for ${results.length} posts.`);
+
+    // Send a weekly engagement summary if it's been a while
+    const totalLikes = results.reduce((sum, r) => sum + r.metrics.likes, 0);
+    const totalRTs = results.reduce((sum, r) => sum + r.metrics.retweets, 0);
+    if (results.length >= 5) {
+      const topPost = results.reduce((best, r) => {
+        const score = r.metrics.likes + r.metrics.retweets + r.metrics.replies;
+        const bestScore = best.metrics.likes + best.metrics.retweets + best.metrics.replies;
+        return score > bestScore ? r : best;
+      }, results[0]!);
+      const topPostData = postsToCheck.find((p) => p.id === topPost.id);
+      if (topPostData) {
+        await sendTelegram(env, [
+          b("Engagement Update"),
+          "",
+          `Checked ${results.length} recent posts.`,
+          `Total: ${totalLikes} likes, ${totalRTs} retweets`,
+          "",
+          b("Top performer:"),
+          `"${topPostData.posted_text.slice(0, 100)}..."`,
+          `${topPost.metrics.likes} likes, ${topPost.metrics.retweets} RTs, ${topPost.metrics.replies} replies`,
+        ].join("\n"));
+      }
+    }
   } finally {
     await closeSession(browser);
   }
