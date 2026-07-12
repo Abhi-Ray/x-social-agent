@@ -105,31 +105,47 @@ export async function generateDrafts(
   apiKey: string,
   context: ContextWindow,
   trends: Array<{ topic_text: string; category: string | null }>,
+  viralTweets?: Array<{ trend: string; tweet: { url: string; text: string; author: string; authorHandle: string; engagement?: { likes: number; retweets: number; replies: number } } }>,
 ): Promise<GeneratedDraft[]> {
   const models = await getFreeModels(apiKey);
   const systemPrompt = buildSystemPrompt();
   const contextSection = buildContextSection(context);
   const trendsSection = trends.map((t, i) => `${i + 1}. ${t.topic_text}${t.category ? ` [${t.category}]` : ""}`).join("\n");
 
+  // Build viral tweet targets section for reply drafts
+  let viralSection = "";
+  if (viralTweets && viralTweets.length > 0) {
+    viralSection = "\n\nVIRAL TWEETS TO REPLY TO (high engagement — replying gets you discovered):\n";
+    viralSection += viralTweets.map((v, i) => {
+      const eng = v.tweet.engagement;
+      const engStr = eng ? ` [${eng.likes} likes, ${eng.retweets} RTs]` : "";
+      return `  ${i + 1}. @${v.tweet.authorHandle} (${v.tweet.author})${engStr}\     Tweet: "${v.tweet.text.slice(0, 200)}"\n     URL: ${v.tweet.url}\n     Trend: ${v.trend}`;
+    }).join("\n");
+    viralSection += "\n\nPRIORITY: Generate at least 1 reply draft to a viral tweet above. Replies to viral tweets are the #1 growth hack — your reply shows up to everyone who engages with the original tweet.";
+  }
+
   const userPrompt = `Generate 1-3 draft posts based on the trending topics below. Use the persona and rules from the system prompt.
 
 ${contextSection}
 
 TRENDING TOPICS RIGHT NOW:
-${trendsSection}
+${trendsSection}${viralSection}
 
 Return ONLY a JSON object with this exact shape:
-{"drafts":[{"action_type":"original_post|reply|retweet_comment|mention","draft_text":"...","source_tweet_url":null,"source_tweet_text":null,"source_tweet_author":null,"quote_text":"optional verified quote text or null","quote_attributed_to":"optional figure name or null","quote_source":"optional source work or null","trend_topic":"the trend this relates to"}]}
+{"drafts":[{"action_type":"original_post|reply|retweet_comment|mention","draft_text":"...","source_tweet_url":"url if replying to a tweet, else null","source_tweet_text":"text of tweet being replied to, else null","source_tweet_author":"@handle of tweet author, else null","quote_text":"optional verified quote text or null","quote_attributed_to":"optional figure name or null","quote_source":"optional source work or null","trend_topic":"the trend this relates to"}]}
 
 Rules:
-- 1-3 drafts max. Prefer original_post for safe tier.
-- Each draft_text MUST be under 280 characters.
+- 1-3 drafts max.
+- If viral tweets are provided, make at least 1 a reply (action_type="reply") with source_tweet_url set.
+- Each draft_text MUST be under 280 characters. SHORTER IS BETTER — aim for 1-2 lines.
 - If you use a quote, it MUST be from the verified quotes provided in context. If no fitting quote exists, set quote fields to null.
 - Do NOT repeat topics or angles from recent posts shown in context.
 - Do NOT use hashtags unless it's the joke (max 1).
 - Do NOT use emoji unless it's the punchline (max 1).
+- WRITE SIMPLE. A 12-year-old should understand every post. No big words. No long sentences.
 - Be funny, sarcastic, opinionated. No corporate bot energy.
-- No real personal info about anyone.`;
+- No real personal info about anyone.
+- For replies: be direct, witty, add value. Don't just agree — say something that makes people want to follow you.`;
 
   const errors: string[] = [];
   for (const model of models) {

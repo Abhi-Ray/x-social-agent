@@ -11,6 +11,77 @@ export interface ScrapedTweet {
   text: string;
   author: string;
   authorHandle: string;
+  engagement?: { likes: number; retweets: number; replies: number };
+}
+
+// Scrape top tweets for a trend — used to find viral tweets to reply to
+export async function scrapeTrendTopTweets(page: Page, trend: string, limit = 5): Promise<ScrapedTweet[]> {
+  const searchUrl = `https://x.com/search?q=${encodeURIComponent(trend)}&src=trend_click&f=top`;
+  await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await page.waitForTimeout(3000);
+
+  if (await checkForChallenge(page)) {
+    throw new Error("CHALLENGE: X is showing a challenge during trend tweet scrape. Stopping.");
+  }
+
+  const tweets: ScrapedTweet[] = [];
+  try {
+    await page.waitForSelector('article [data-testid="tweetText"]', { timeout: 15_000 });
+  } catch {
+    return tweets;
+  }
+
+  const articles = await page.$$('article').catch(() => []);
+  for (let i = 0; i < Math.min(articles.length, limit); i++) {
+    const article = articles[i]!;
+    const text = await article.$eval('[data-testid="tweetText"]', (el) => el.textContent ?? "").catch(() => "");
+    const authorHandle = await article.$eval('a[href^="/"]', (el) => el.getAttribute("href")?.replace("/", "") ?? "").catch(() => "");
+    const author = await article.$eval('a[role="link"] [tabindex]', (el) => el.textContent ?? "").catch(() => "");
+    const url = await article.$eval("time", (el) => {
+      const link = el.parentElement;
+      return link?.getAttribute("href") ?? "";
+    }).catch(() => "");
+
+    // Get engagement counts
+    let engagement = { likes: 0, retweets: 0, replies: 0 };
+    try {
+      const replyLabel = await article.$eval('[data-testid="reply"]', (el) => el.getAttribute("aria-label") ?? "").catch(() => "");
+      const retweetLabel = await article.$eval('[data-testid="retweet"]', (el) => el.getAttribute("aria-label") ?? "").catch(() => "");
+      const likeLabel = await article.$eval('[data-testid="like"]', (el) => el.getAttribute("aria-label") ?? "").catch(() => "");
+      engagement = {
+        replies: parseEngagementCount(replyLabel),
+        retweets: parseEngagementCount(retweetLabel),
+        likes: parseEngagementCount(likeLabel),
+      };
+    } catch {}
+
+    if (text && url) {
+      tweets.push({
+        url: url.startsWith("http") ? url : `https://x.com${url}`,
+        text: text.trim(),
+        author: String(author),
+        authorHandle: String(authorHandle),
+        engagement,
+      });
+    }
+  }
+
+  // Sort by engagement (likes + retweets + replies) descending
+  return tweets.sort((a, b) => {
+    const aScore = (a.engagement?.likes ?? 0) + (a.engagement?.retweets ?? 0) + (a.engagement?.replies ?? 0);
+    const bScore = (b.engagement?.likes ?? 0) + (b.engagement?.retweets ?? 0) + (b.engagement?.replies ?? 0);
+    return bScore - aScore;
+  });
+}
+
+function parseEngagementCount(label: string): number {
+  if (!label) return 0;
+  const match = label.match(/([\d,.]+K?M?)/i);
+  if (!match?.[1]) return 0;
+  let str = match[1].replace(/,/g, "");
+  if (str.toUpperCase().endsWith("K")) return Math.round(parseFloat(str) * 1000);
+  if (str.toUpperCase().endsWith("M")) return Math.round(parseFloat(str) * 1_000_000);
+  return parseInt(str, 10) || 0;
 }
 
 export async function scrapeTrending(page: Page): Promise<ScrapedTrend[]> {

@@ -1,7 +1,7 @@
 import type { Env } from "./types";
 import { SupabaseClient } from "./supabase";
 import { launchSession, closeSession, isLoggedIn, checkForChallenge } from "./session";
-import { scrapeTrending } from "./scraper";
+import { scrapeTrending, scrapeTrendTopTweets } from "./scraper";
 import { generateAndStoreDrafts } from "./generator";
 import { sendDraftForApproval, sendTelegram, b } from "./telegram";
 import { executeAction } from "./executor";
@@ -44,9 +44,32 @@ export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
     await db.insertTrends(trends.map((t) => ({ topic_text: t.topic_text, category: t.category })));
     console.log(`Scraped ${trends.length} trends.`);
 
-    // 6. Generate drafts with past-context awareness
+    // 5b. Scrape top viral tweets for the top 3 trends — for reply drafts
+    // This is the key growth hack: replying to viral tweets gets you discovered
+    console.log("Scraping viral tweets for reply opportunities...");
+    const viralTweets: Array<{ trend: string; tweet: { url: string; text: string; author: string; authorHandle: string; engagement?: { likes: number; retweets: number; replies: number } } }> = [];
+    for (const trend of trends.slice(0, 3)) {
+      try {
+        const topTweets = await scrapeTrendTopTweets(page, trend.topic_text, 3);
+        if (topTweets.length) {
+          // Pick the most engaging tweet
+          const best = topTweets[0]!;
+          // Only reply to tweets with meaningful engagement (100+ total engagement)
+          const totalEng = (best.engagement?.likes ?? 0) + (best.engagement?.retweets ?? 0) + (best.engagement?.replies ?? 0);
+          if (totalEng >= 100) {
+            viralTweets.push({ trend: trend.topic_text, tweet: best });
+            console.log(`  Found viral tweet for "${trend.topic_text}": ${best.authorHandle} (${totalEng} engagement)`);
+          }
+        }
+      } catch (e) {
+        console.log(`  Failed to scrape tweets for "${trend.topic_text}": ${e instanceof Error ? e.message : e}`);
+      }
+      await sleep(2000 + Math.random() * 1000);
+    }
+
+    // 6. Generate drafts with past-context awareness + viral reply targets
     console.log("Generating drafts...");
-    const drafts = await generateAndStoreDrafts(env, db, trends.slice(0, 10));
+    const drafts = await generateAndStoreDrafts(env, db, trends.slice(0, 10), viralTweets);
     console.log(`Generated ${drafts.length} drafts.`);
 
     if (!drafts.length) {

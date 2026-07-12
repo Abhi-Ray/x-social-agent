@@ -31,12 +31,13 @@ export async function generateAndStoreDrafts(
   env: Env,
   db: SupabaseClient,
   trends: Array<{ topic_text: string; category: string | null }>,
+  viralTweets?: Array<{ trend: string; tweet: { url: string; text: string; author: string; authorHandle: string; engagement?: { likes: number; retweets: number; replies: number } } }>,
 ): Promise<GeneratedDraft[]> {
   // Build context window for past-awareness
   const context = await buildContextWindow(db);
 
-  // Generate drafts using OpenRouter
-  const drafts = await generateDrafts(env.OPENROUTER_API_KEY, context, trends);
+  // Generate drafts using OpenRouter (pass viral tweets for reply targeting)
+  const drafts = await generateDrafts(env.OPENROUTER_API_KEY, context, trends, viralTweets);
 
   // Filter out drafts that are too similar to recent posts
   const filtered = drafts.filter((draft) => {
