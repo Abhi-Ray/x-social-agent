@@ -232,7 +232,7 @@ export class SupabaseClient {
 
   // ─── Verified quotes ───
   async getVerifiedQuotes(limit = 50): Promise<VerifiedQuote[]> {
-    return this.request<VerifiedQuote[]>(`verified_quotes?select=*&order=last_used_at.asc.nulls.first&limit=${limit}`);
+    return this.request<VerifiedQuote[]>(`verified_quotes?select=*&order=last_used_at.asc&limit=${limit}`);
   }
 
   async getRandomQuotes(sampleSize = 15): Promise<VerifiedQuote[]> {
