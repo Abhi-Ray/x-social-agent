@@ -47,10 +47,11 @@ export function localDate(offsetDays = 0): string {
 export function getISTHour(): number {
   const istTime = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Kolkata",
-    hour: "numeric",
+    hour: "2-digit",
     hour12: false,
   }).format(new Date());
-  return parseInt(istTime, 10);
+  const hour = parseInt(istTime, 10);
+  return hour === 24 ? 0 : hour; // Handle "24" from some environments
 }
 
 // Quiet hours: 12 AM (midnight) to 7 AM IST — no posts, no drafts
