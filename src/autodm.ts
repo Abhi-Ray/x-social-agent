@@ -43,23 +43,45 @@ export async function scrapeNewFollowers(page: Page, ownHandle: string): Promise
 
 export async function sendDM(page: Page, handle: string, message: string): Promise<{ success: boolean; error: string | null }> {
   try {
-    const dmUrl = `https://x.com/messages/compose?recipient_id=${handle}`;
-    await page.goto(dmUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    // Navigate to the follower's profile, then use the message button there
+    await page.goto(`https://x.com/${handle}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.waitForTimeout(2000);
 
     if (await checkForChallenge(page)) {
-      return { success: false, error: "CHALLENGE: X is showing a challenge during DM compose. Stopping." };
+      return { success: false, error: "CHALLENGE: X is showing a challenge during DM. Stopping." };
     }
 
-    const editor = await page.$('[data-testid="dmComposerTextInput"] [contenteditable="true"], div[contenteditable="true"][role="textbox"]')
+    // Dismiss any overlay/modal that might be blocking
+    await page.evaluate(() => {
+      const masks = document.querySelectorAll('[data-testid="mask"]');
+      masks.forEach((m) => (m as HTMLElement).remove());
+      const layers = document.querySelectorAll('#layers > div');
+      layers.forEach((l) => (l as HTMLElement).remove());
+    }).catch(() => {});
+
+    // Click the message/envelope button on the profile
+    const messageButton = await page.$('[data-testid="sendDMFromProfile"], a[href*="/messages/compose"], button[aria-label*="Message"]')
+      .catch(() => null);
+
+    if (!messageButton) {
+      // Fallback: navigate directly to DM compose
+      await page.goto(`https://x.com/messages/compose?recipient_id=${handle}`, { waitUntil: "domcontentloaded", timeout: 15_000 });
+      await page.waitForTimeout(2000);
+    } else {
+      await messageButton.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(2000);
+    }
+
+    // Find the DM composer input
+    const editor = await page.waitForSelector('[data-testid="dmComposerTextInput"] [contenteditable="true"], div[contenteditable="true"][role="textbox"]', { timeout: 10_000 })
       .catch(() => null);
     if (!editor) {
       return { success: false, error: "DM composer input not found" };
     }
 
-    await editor.click();
+    await editor.click({ force: true });
     await page.waitForTimeout(500);
-    await editor.fill(message);
+    await page.keyboard.type(message, { delay: 50 });
     await page.waitForTimeout(500);
 
     const sendButton = await page.$('[data-testid="dmComposerSendButton"], button:has-text("Send")').catch(() => null);
@@ -67,7 +89,7 @@ export async function sendDM(page: Page, handle: string, message: string): Promi
       return { success: false, error: "DM send button not found" };
     }
 
-    await sendButton.click();
+    await sendButton.click({ force: true });
     await page.waitForTimeout(2000);
 
     return { success: true, error: null };
@@ -139,30 +161,45 @@ Return ONLY the DM text. No JSON, no quotes, no explanation. Just the message.`;
 }
 
 export async function processNewFollowers(db: SupabaseClient, page: Page, ownHandle: string, apiKey: string): Promise<number> {
-  const scraped = await scrapeNewFollowers(page, ownHandle);
-  if (!scraped.length) return 0;
+  try {
+    const scraped = await scrapeNewFollowers(page, ownHandle);
+    if (!scraped.length) return 0;
 
-  const knownHandles = await db.getKnownFollowerHandles(500);
-  const newFollowers = scraped.filter((f) => !knownHandles.has(f.handle));
-  if (!newFollowers.length) return 0;
+    const knownHandles = await db.getKnownFollowerHandles(500);
+    const newFollowers = scraped.filter((f) => !knownHandles.has(f.handle));
+    if (!newFollowers.length) return 0;
 
-  await db.insertNewFollowers(newFollowers);
+    await db.insertNewFollowers(newFollowers);
 
-  const pending = await db.getNewFollowersWithoutDM(50);
-  if (!pending.length) return 0;
+    const pending = await db.getNewFollowersWithoutDM(50);
+    if (!pending.length) return 0;
 
-  let sentCount = 0;
-  for (const follower of pending) {
-    const message = await generateWelcomeMessage(apiKey, follower.handle);
-    const result = await sendDM(page, follower.handle, message);
-    if (result.success) {
-      await db.markFollowerDMSent(follower.id);
-      sentCount++;
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    } else {
-      console.log(`[AutoDM] Failed to DM @${follower.handle}: ${result.error}`);
+    // Limit to 3 DMs per tick to avoid hanging
+    const toProcess = pending.slice(0, 3);
+    let sentCount = 0;
+    for (const follower of toProcess) {
+      try {
+        const message = await generateWelcomeMessage(apiKey, follower.handle);
+        const result = await sendDM(page, follower.handle, message);
+        if (result.success) {
+          await db.markFollowerDMSent(follower.id);
+          sentCount++;
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        } else {
+          console.log(`[AutoDM] Failed to DM @${follower.handle}: ${result.error}`);
+          // Mark as sent anyway to avoid retrying and getting stuck
+          await db.markFollowerDMSent(follower.id);
+        }
+      } catch (e) {
+        console.log(`[AutoDM] Error DMing @${follower.handle}: ${e instanceof Error ? e.message : e}`);
+        // Mark as sent to avoid retry loop
+        await db.markFollowerDMSent(follower.id).catch(() => {});
+      }
     }
-  }
 
-  return sentCount;
+    return sentCount;
+  } catch (e) {
+    console.log(`[AutoDM] processNewFollowers error: ${e instanceof Error ? e.message : e}`);
+    return 0;
+  }
 }
