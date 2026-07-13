@@ -73,7 +73,7 @@ Rules:
         },
         body: JSON.stringify({
           model,
-          temperature: 0.5,
+          temperature: 0.7,
           max_tokens: 1000,
           reasoning: { effort: "none" },
           messages: [
@@ -209,7 +209,7 @@ Rules:
       },
       body: JSON.stringify({
         model,
-        temperature: 0.4,
+        temperature: 0.7,
         max_tokens: 500,
         reasoning: { effort: "none" },
         messages: [

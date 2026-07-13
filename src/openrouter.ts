@@ -1,10 +1,15 @@
 import type { ContextWindow, GeneratedDraft } from "./types";
 import { buildSystemPrompt, buildContextSection } from "./persona";
 
-// Same preferred free models as jarvis-assistant — discovered at runtime and filtered to free
+// Preferred free models — ordered by creative writing quality for social media
+// Hermes 3 (405B) is a creative writing specialist — best for punchy, witty, persona-driven posts
+// GPT-OSS (120B) is OpenAI's open model — strong general quality
+// Nemotron Ultra (550B) is a fallback — large but more reasoning-focused, less creative
+// Llama 3.3 (70B) is a solid last resort
 export const preferredModels = [
+  "nousresearch/hermes-3-llama-3.1-405b:free",
+  "openai/gpt-oss-120b:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "tencent/hy3:free",
   "meta-llama/llama-3.3-70b-instruct:free",
 ] as const;
 
@@ -143,7 +148,9 @@ Rules:
 - Do NOT use hashtags unless it's the joke (max 1).
 - Do NOT use emoji unless it's the punchline (max 1).
 - WRITE SIMPLE. A 12-year-old should understand every post. No big words. No long sentences.
-- Be funny, sarcastic, opinionated. No corporate bot energy.
+- Be funny, witty, opinionated. No corporate bot energy.
+- TONE BALANCE: At least 1 of the 3 drafts should be POSITIVE or CELEBRATORY. Don't make all 3 critical. Mix it up — one hype post, one observation, one hot take.
+- Celebrate Indian wins, achievements, and progress. Don't default to criticism.
 - No real personal info about anyone.
 - For replies: be direct, witty, add value. Don't just agree — say something that makes people want to follow you.`;
 
@@ -161,7 +168,7 @@ Rules:
         },
         body: JSON.stringify({
           model,
-          temperature: 0.4,
+          temperature: 0.7,
           max_tokens: 4000,
           reasoning: { effort: "none" },
           messages: [
