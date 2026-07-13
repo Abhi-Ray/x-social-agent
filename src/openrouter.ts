@@ -2,14 +2,16 @@ import type { ContextWindow, GeneratedDraft } from "./types";
 import { buildSystemPrompt, buildContextSection } from "./persona";
 
 // Preferred free models — ordered by creative writing quality for social media
-// Hermes 3 (405B) is a creative writing specialist — best for punchy, witty, persona-driven posts
-// GPT-OSS (120B) is OpenAI's open model — strong general quality
-// Nemotron Ultra (550B) is a fallback — large but more reasoning-focused, less creative
+// GPT-OSS (120B) is OpenAI's open model — reliable, good creative quality, handles JSON well
+// Hermes 3 (405B) is a creative writing specialist — best when not rate-limited (often 429 on free tier)
+// Nemotron Ultra (550B) is a reliable fallback — large, follows instructions well
+// Nemotron Super (120B) is another fallback
 // Llama 3.3 (70B) is a solid last resort
 export const preferredModels = [
-  "nousresearch/hermes-3-llama-3.1-405b:free",
   "openai/gpt-oss-120b:free",
+  "nousresearch/hermes-3-llama-3.1-405b:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
   "meta-llama/llama-3.3-70b-instruct:free",
 ] as const;
 
