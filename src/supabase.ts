@@ -393,7 +393,7 @@ export class SupabaseClient {
     await this.request("reply_sentiment", {
       method: "POST",
       headers: { prefer: "return=minimal" },
-      body: JSON.stringify({ ...reply, analyzed_at: new Date().toISOString() }),
+      body: JSON.stringify({ ...reply, created_at: new Date().toISOString() }),
     });
   }
 
@@ -405,7 +405,7 @@ export class SupabaseClient {
     score: number;
   }>> {
     return this.request(
-      `reply_sentiment?post_url=eq.${encodeURIComponent(postUrl)}&select=*&order=analyzed_at.desc`,
+      `reply_sentiment?post_url=eq.${encodeURIComponent(postUrl)}&select=*&order=created_at.desc`,
     );
   }
 
