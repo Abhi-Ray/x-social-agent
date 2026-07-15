@@ -108,6 +108,23 @@ async function handleReject(env: Env, db: SupabaseClient, draftId: string, chatI
 
   await db.updateDraftStatus(draftId, "rejected", { rejected_at: new Date().toISOString() });
 
+  // Log the rejection for learning — track style + topic
+  try {
+    const { logRejection } = await import("./rejection");
+    const result = await logRejection(db, {
+      id: draft.id,
+      draft_text: draft.draft_text,
+      trend_topic: draft.trend_topic,
+      action_type: draft.action_type,
+    });
+    // If topic was blocked (2nd rejection), notify user
+    if (result?.blocked) {
+      await sendTelegram(env, b(`Topic "${draft.trend_topic}" blocked after ${result.rejection_count} rejections. Won't generate posts about it anymore.`), chatId);
+    }
+  } catch {
+    // Non-fatal — rejection logging is best-effort
+  }
+
   await editMessageReplyMarkup(env, chatId, messageId, {
     inline_keyboard: [[{ text: "Rejected", callback_data: "noop" }]],
   });
@@ -144,13 +161,13 @@ async function handleCommand(env: Env, db: SupabaseClient, text: string, chatId:
       "/delete <url> — delete a post by its X URL",
       "/undo-retweet <url> — undo a retweet by its X URL",
       "/health — account health log",
-      "/engagement — engagement summary + best posting hours",
       "/followers — new followers + DM status",
       "/competitors — competitor cloning stats",
       "/templates — top viral templates",
       "/pillars — content pillar performance",
       "/sentiment — sentiment analysis of recent replies",
       "/trends — trend predictions",
+      "/unblock <topic> — unblock a rejected topic",
       "",
       "Send plain text to edit a draft (after tapping Edit).",
     ].join("\n"), chatId);
@@ -254,21 +271,14 @@ async function handleCommand(env: Env, db: SupabaseClient, text: string, chatId:
     } catch (error) {
       await sendTelegram(env, b(`Undo error: ${error instanceof Error ? error.message : String(error)}`), chatId);
     }
-  } else if (cmd === "/engagement") {
-    try {
-      const { getBestPostingHours } = await import("./besttime");
-      const { getISTHour } = await import("./config");
-      const bestHours = await getBestPostingHours(db, 5);
-      const currentHour = getISTHour();
-      const parts = [b("Engagement Analytics"), "", `Current IST hour: ${currentHour}`, "", b("Best posting hours (IST):")];
-      for (const h of bestHours) {
-        parts.push(`  ${h.hour}:00 — avg ${Math.round(h.avgEngagement)} engagement (${h.postCount} posts)`);
-      }
-      if (!bestHours.length) parts.push("  Not enough data yet. Keep posting!");
-      await sendTelegram(env, parts.join("\n"), chatId);
-    } catch (e) {
-      await sendTelegram(env, b(`Engagement error: ${e instanceof Error ? e.message : String(e)}`), chatId);
+  } else if (cmd.startsWith("/unblock ")) {
+    const topic = text.slice(9).trim();
+    if (!topic) {
+      await sendTelegram(env, "Usage: /unblock <topic>", chatId);
+      return;
     }
+    await db.unblockTopic(topic);
+    await sendTelegram(env, b(`Topic "${topic}" unblocked. Will generate posts about it again.`), chatId);
   } else if (cmd === "/followers") {
     try {
       const followers = await db.getRecentCrossPosts(5); // placeholder

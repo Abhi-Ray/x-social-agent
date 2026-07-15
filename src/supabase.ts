@@ -791,5 +791,158 @@ export class SupabaseClient {
       headers: { prefer: "return=minimal" },
     });
   }
+
+  // ─── Rejection learning ───
+
+  async logRejection(entry: {
+    draft_id: string | null;
+    draft_text: string;
+    trend_topic: string | null;
+    action_type: string | null;
+    is_critical: boolean;
+    is_positive: boolean;
+    is_sarcastic: boolean;
+    is_long_form: boolean;
+    word_count: number;
+  }): Promise<void> {
+    try {
+      await this.request("rejection_log", {
+        method: "POST",
+        headers: { prefer: "return=minimal" },
+        body: JSON.stringify(entry),
+      });
+    } catch {
+      // Table might not exist yet — non-fatal
+    }
+  }
+
+  async getRecentRejections(limit = 20): Promise<Array<{
+    draft_text: string;
+    trend_topic: string | null;
+    is_critical: boolean;
+    is_positive: boolean;
+    is_sarcastic: boolean;
+    is_long_form: boolean;
+    word_count: number;
+    rejected_at: string;
+  }>> {
+    try {
+      return await this.request(
+        `rejection_log?order=rejected_at.desc&limit=${limit}&select=draft_text,trend_topic,is_critical,is_positive,is_sarcastic,is_long_form,word_count,rejected_at`,
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  // ─── Blocked topics ───
+
+  async incrementTopicRejection(topic: string): Promise<{ rejection_count: number; blocked: boolean }> {
+    const normalized = topic.trim().toLowerCase();
+    try {
+      // Try to update existing
+      const existing = await this.request<Array<{ id: string; rejection_count: number; blocked_at: string | null }>>(
+        `blocked_topics?topic=eq.${encodeURIComponent(normalized)}&select=id,rejection_count,blocked_at`,
+      );
+
+      if (existing.length > 0) {
+        const row = existing[0]!;
+        const newCount = row.rejection_count + 1;
+        const shouldBlock = newCount >= 2 && !row.blocked_at;
+        await this.request(`blocked_topics?id=eq.${encodeURIComponent(row.id)}`, {
+          method: "PATCH",
+          headers: { prefer: "return=minimal" },
+          body: JSON.stringify({
+            rejection_count: newCount,
+            last_rejected_at: new Date().toISOString(),
+            ...(shouldBlock ? { blocked_at: new Date().toISOString() } : {}),
+          }),
+        });
+        return { rejection_count: newCount, blocked: shouldBlock || !!row.blocked_at };
+      } else {
+        // Insert new
+        await this.request("blocked_topics", {
+          method: "POST",
+          headers: { prefer: "return=minimal" },
+          body: JSON.stringify({
+            topic: normalized,
+            rejection_count: 1,
+            first_rejected_at: new Date().toISOString(),
+            last_rejected_at: new Date().toISOString(),
+          }),
+        });
+        return { rejection_count: 1, blocked: false };
+      }
+    } catch {
+      return { rejection_count: 0, blocked: false };
+    }
+  }
+
+  async getBlockedTopics(): Promise<string[]> {
+    try {
+      const rows = await this.request<Array<{ topic: string }>>(
+        `blocked_topics?blocked_at=not.is.null&select=topic`,
+      );
+      return rows.map((r) => r.topic);
+    } catch {
+      return [];
+    }
+  }
+
+  async isTopicBlocked(topic: string): Promise<boolean> {
+    const normalized = topic.trim().toLowerCase();
+    try {
+      const rows = await this.request<Array<{ topic: string }>>(
+        `blocked_topics?topic=eq.${encodeURIComponent(normalized)}&blocked_at=not.is.null&select=topic&limit=1`,
+      );
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async unblockTopic(topic: string): Promise<void> {
+    const normalized = topic.trim().toLowerCase();
+    try {
+      await this.request(`blocked_topics?topic=eq.${encodeURIComponent(normalized)}`, {
+        method: "PATCH",
+        headers: { prefer: "return=minimal" },
+        body: JSON.stringify({ blocked_at: null, unblock_after: null }),
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // ─── Daily summary log ───
+
+  async hasDailySummaryBeenSent(date: string): Promise<boolean> {
+    try {
+      const rows = await this.request<Array<{ id: string }>>(
+        `daily_summary_log?summary_date=eq.${date}&select=id&limit=1`,
+      );
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async logDailySummary(entry: {
+    summary_date: string;
+    posts_count: number;
+    total_likes: number;
+    total_retweets: number;
+    total_replies: number;
+  }): Promise<void> {
+    try {
+      await this.request("daily_summary_log", {
+        method: "POST",
+        headers: { prefer: "return=minimal" },
+        body: JSON.stringify({ ...entry, sent_at: new Date().toISOString() }),
+      });
+    } catch {
+      // Non-fatal
+    }
+  }
 }
 

@@ -2,6 +2,7 @@ import type { Env, ContextWindow, GeneratedDraft, TrendingTopic, PostedContent, 
 import { SupabaseClient } from "./supabase";
 import { generateDrafts } from "./openrouter";
 import { CONTEXT_POSTS_COUNT, CONTEXT_TRENDS_DAYS, CONTEXT_QUOTES_SAMPLE } from "./config";
+import { buildRejectionFeedback } from "./rejection";
 
 export async function buildContextWindow(db: SupabaseClient): Promise<ContextWindow> {
   const [recentPosts, recentTrends, recentDrafts, todayCounters, quotesSample] = await Promise.all([
@@ -18,7 +19,7 @@ export async function buildContextWindow(db: SupabaseClient): Promise<ContextWin
     recent_drafts: recentDrafts,
     today_counters: todayCounters,
     verified_quotes_sample: quotesSample,
-    persona_summary: "Billionaire mindset, god complex, sarcastic, atheist, no social order belief, opinionated on all topics, no political bias, factually correct, critical/logical, historical analogies, stoic/Sun Tzu/Indian philosophy references.",
+    persona_summary: "Billionaire mindset, confident not arrogant, witty, optimistic and celebratory, atheist, no social order belief, opinionated on all topics, no political bias, factually correct, critical when it matters but not as default, historical analogies, stoic/Sun Tzu/Indian philosophy references.",
   };
 }
 
@@ -36,8 +37,12 @@ export async function generateAndStoreDrafts(
   // Build context window for past-awareness
   const context = await buildContextWindow(db);
 
+  // Build rejection feedback (what styles/topics the user doesn't like)
+  const rejectionFeedback = await buildRejectionFeedback(db);
+
   // Generate drafts using OpenRouter (pass viral tweets for reply targeting)
-  const drafts = await generateDrafts(env.OPENROUTER_API_KEY, context, trends, viralTweets);
+  // The rejection feedback is prepended to the context section
+  const drafts = await generateDrafts(env.OPENROUTER_API_KEY, context, trends, viralTweets, rejectionFeedback);
 
   // Filter out drafts that are too similar to recent posts
   const filtered = drafts.filter((draft) => {

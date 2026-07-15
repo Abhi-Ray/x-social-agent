@@ -72,11 +72,29 @@ export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
     await db.insertTrends(trends.map((t) => ({ topic_text: t.topic_text, category: t.category })));
     console.log(`Scraped ${trends.length} trends.`);
 
+    // 5a. Filter out blocked topics (topics rejected 2+ times)
+    let filteredTrends = trends;
+    try {
+      const blockedTopics = await db.getBlockedTopics();
+      if (blockedTopics.length > 0) {
+        filteredTrends = trends.filter((t) => {
+          const normalized = t.topic_text.trim().toLowerCase();
+          return !blockedTopics.some((bt) => normalized.includes(bt) || bt.includes(normalized));
+        });
+        const blockedCount = trends.length - filteredTrends.length;
+        if (blockedCount > 0) {
+          console.log(`Filtered out ${blockedCount} blocked topics. ${filteredTrends.length} remaining.`);
+        }
+      }
+    } catch (e) {
+      console.log(`Blocked topic filter failed (non-fatal): ${e instanceof Error ? e.message : e}`);
+    }
+
     // 5b. Scrape top viral tweets for the top 3 trends — for reply drafts
     // This is the key growth hack: replying to viral tweets gets you discovered
     console.log("Scraping viral tweets for reply opportunities...");
     const viralTweets: Array<{ trend: string; tweet: { url: string; text: string; author: string; authorHandle: string; engagement?: { likes: number; retweets: number; replies: number } } }> = [];
-    for (const trend of trends.slice(0, 3)) {
+    for (const trend of filteredTrends.slice(0, 3)) {
       try {
         const topTweets = await scrapeTrendTopTweets(page, trend.topic_text, 3);
         if (topTweets.length) {
@@ -181,7 +199,8 @@ export async function runTick(env: Env, db: SupabaseClient): Promise<void> {
     }
 
     console.log("Generating drafts...");
-    const drafts = await generateAndStoreDrafts(env, db, trends.slice(0, 10), viralTweets);
+    // Pass filtered trends (blocked topics removed) + rejection feedback
+    const drafts = await generateAndStoreDrafts(env, db, filteredTrends.slice(0, 10), viralTweets);
     console.log(`Generated ${drafts.length} drafts.`);
 
     if (!drafts.length) {
@@ -479,7 +498,11 @@ export async function runEngagementCheck(env: Env, db: SupabaseClient): Promise<
     // Send a weekly engagement summary if it's been a while
     const totalLikes = results.reduce((sum, r) => sum + r.metrics.likes, 0);
     const totalRTs = results.reduce((sum, r) => sum + r.metrics.retweets, 0);
-    if (results.length >= 5) {
+    const totalReplies = results.reduce((sum, r) => sum + r.metrics.replies, 0);
+    // Only send engagement update once per day
+    const today = localDate();
+    const alreadySent = await db.hasDailySummaryBeenSent(today);
+    if (!alreadySent && results.length >= 3) {
       const topPost = results.reduce((best, r) => {
         const score = r.metrics.likes + r.metrics.retweets + r.metrics.replies;
         const bestScore = best.metrics.likes + best.metrics.retweets + best.metrics.replies;
@@ -488,15 +511,22 @@ export async function runEngagementCheck(env: Env, db: SupabaseClient): Promise<
       const topPostData = postsToCheck.find((p) => p.id === topPost.id);
       if (topPostData) {
         await sendTelegram(env, [
-          b("Engagement Update"),
+          b("📊 Daily Engagement Summary"),
           "",
           `Checked ${results.length} recent posts.`,
-          `Total: ${totalLikes} likes, ${totalRTs} retweets`,
+          `Total: ${totalLikes} likes, ${totalRTs} retweets, ${totalReplies} replies`,
           "",
           b("Top performer:"),
           `"${topPostData.posted_text.slice(0, 100)}..."`,
           `${topPost.metrics.likes} likes, ${topPost.metrics.retweets} RTs, ${topPost.metrics.replies} replies`,
         ].join("\n"));
+        await db.logDailySummary({
+          summary_date: today,
+          posts_count: results.length,
+          total_likes: totalLikes,
+          total_retweets: totalRTs,
+          total_replies: totalReplies,
+        });
       }
     }
   } finally {

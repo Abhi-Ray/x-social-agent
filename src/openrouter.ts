@@ -113,6 +113,7 @@ export async function generateDrafts(
   context: ContextWindow,
   trends: Array<{ topic_text: string; category: string | null }>,
   viralTweets?: Array<{ trend: string; tweet: { url: string; text: string; author: string; authorHandle: string; engagement?: { likes: number; retweets: number; replies: number } } }>,
+  rejectionFeedback?: string,
 ): Promise<GeneratedDraft[]> {
   const models = await getFreeModels(apiKey);
   const systemPrompt = buildSystemPrompt();
@@ -131,10 +132,12 @@ export async function generateDrafts(
     viralSection += "\n\nPRIORITY: Generate at least 1 reply draft to a viral tweet above. Replies to viral tweets are the #1 growth hack — your reply shows up to everyone who engages with the original tweet.";
   }
 
+  const rejectionSection = rejectionFeedback ? `\n${rejectionFeedback}\n` : "";
+
   const userPrompt = `Generate 1-3 draft posts based on the trending topics below. Use the persona and rules from the system prompt.
 
 ${contextSection}
-
+${rejectionSection}
 TRENDING TOPICS RIGHT NOW:
 ${trendsSection}${viralSection}
 
