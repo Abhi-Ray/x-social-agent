@@ -2,17 +2,20 @@ import type { ContextWindow, GeneratedDraft } from "./types";
 import { buildSystemPrompt, buildContextSection } from "./persona";
 
 // Preferred free models — ordered by creative writing quality for social media
-// GPT-OSS (120B) is OpenAI's open model — reliable, good creative quality, handles JSON well
-// Hermes 3 (405B) is a creative writing specialist — best when not rate-limited (often 429 on free tier)
+// Hermes 3 (405B) is a creative writing specialist — best for punchy, witty, persona-driven posts
+// GPT-OSS (20B) is OpenAI's open model — smaller but reliable, handles JSON well
 // Nemotron Ultra (550B) is a reliable fallback — large, follows instructions well
+// Qwen3 Next (80B) is good for multilingual (Hindi/Hinglish)
 // Nemotron Super (120B) is another fallback
 // Llama 3.3 (70B) is a solid last resort
 export const preferredModels = [
-  "openai/gpt-oss-120b:free",
   "nousresearch/hermes-3-llama-3.1-405b:free",
+  "openai/gpt-oss-20b:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "meta-llama/llama-3.3-70b-instruct:free",
+  "tencent/hy3:free",
 ] as const;
 
 interface ModelRecord {
